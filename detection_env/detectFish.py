@@ -1,44 +1,59 @@
 import cv2
-import os
 import numpy as np
+import os
 
-# Path to your images
-image_folder = './cropped_frames/'
-output_folder = './detected_fish/'
+# Paths for input and output folders
+input_folder = './new_cropped_frames/'  # Folder with 720 cropped images
+output_folder = './moving_objects/'  # Output folder for images with detected moving objects
 
-# Create the output folder if it doesn't exist
-os.makedirs(output_folder, exist_ok=True)
+if not os.path.exists(output_folder):
+    os.makedirs(output_folder)
 
-# Initialize background subtractor
-backSub = cv2.createBackgroundSubtractorMOG2()
+# List all images in the input folder
+image_files = sorted([f for f in os.listdir(input_folder) if f.endswith('.jpg')])
 
-# Loop through images in the folder
-for filename in sorted(os.listdir(image_folder)):
-    # Read the image
-    image_path = os.path.join(image_folder, filename)
-    frame = cv2.imread(image_path)
+# Load images to calculate the median background model
+images = []
+for image_file in image_files:
+    image_path = os.path.join(input_folder, image_file)
+    image = cv2.imread(image_path)
+    if image is not None:
+        images.append(image)
 
-    # Apply background subtraction
-    fg_mask = backSub.apply(frame)
+# Calculate the median image to estimate the background
+median_background = np.median(images, axis=0).astype(dtype=np.uint8)
 
-    # Threshold the mask to get binary image
-    _, thresh = cv2.threshold(fg_mask, 244, 255, cv2.THRESH_BINARY)
+# Process each image to detect moving objects
+for image_file in image_files:
+    input_path = os.path.join(input_folder, image_file)
+    output_path = os.path.join(output_folder, f"moving_{image_file}")
+    
+    # Read the current image
+    image = cv2.imread(input_path)
+    if image is None:
+        print(f"Error: Could not open image {input_path}.")
+        continue
 
-    # Find contours
-    contours, _ = cv2.findContours(thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    # Compute the absolute difference between the current image and the median background
+    diff = cv2.absdiff(image, median_background)
 
-    # Draw contours on the original frame
+    # Convert the difference to grayscale
+    diff_gray = cv2.cvtColor(diff, cv2.COLOR_BGR2GRAY)
+
+    # Threshold the grayscale difference to create a binary mask
+    _, mask = cv2.threshold(diff_gray, 30, 255, cv2.THRESH_BINARY)
+
+    # Find contours of the detected objects
+    contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+
+    # Draw bounding boxes around detected moving objects
     for contour in contours:
-        if cv2.contourArea(contour) > 100:  # Filter small contours
+        if cv2.contourArea(contour) > 500:  # Minimum contour area to filter noise
             x, y, w, h = cv2.boundingRect(contour)
-            cv2.rectangle(frame, (x, y), (x + w, y + h), (0, 255, 0), 2)
+            # Crop the region of interest (moving object) and save it
+            moving_object = image[y:y+h, x:x+w]
+            moving_object_filename = os.path.join(output_folder, f"moving_object_{image_file}")
+            cv2.imwrite(moving_object_filename, moving_object)
+            print(f"Saved moving object: {moving_object_filename}")
 
-    # Save the result
-    output_filename = os.path.join(output_folder, f'detected_{filename}')
-    cv2.imwrite(output_filename, frame)
-
-    # Optionally show the result
-    cv2.imshow('Detected Fish', frame)
-    cv2.waitKey(1)  # Wait for 1 ms between frames
-
-cv2.destroyAllWindows()
+print("Moving object detection and saving complete.")

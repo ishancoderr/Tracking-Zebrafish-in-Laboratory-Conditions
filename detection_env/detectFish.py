@@ -2,58 +2,27 @@ import cv2
 import numpy as np
 import os
 
-# Paths for input and output folders
-input_folder = './new_cropped_frames/'  # Folder with 720 cropped images
-output_folder = './moving_objects/'  # Output folder for images with detected moving objects
+input_folder = './new_cropped_frames/'
 
-if not os.path.exists(output_folder):
-    os.makedirs(output_folder)
-
-# List all images in the input folder
 image_files = sorted([f for f in os.listdir(input_folder) if f.endswith('.jpg')])
 
-# Load images to calculate the median background model
-images = []
-for image_file in image_files:
-    image_path = os.path.join(input_folder, image_file)
-    image = cv2.imread(image_path)
-    if image is not None:
-        images.append(image)
 
-# Calculate the median image to estimate the background
-median_background = np.median(images, axis=0).astype(dtype=np.uint8)
+image = cv2.imread(f"./new_cropped_frames/{image_files[1]}", cv2.IMREAD_GRAYSCALE)
 
-# Process each image to detect moving objects
-for image_file in image_files:
-    input_path = os.path.join(input_folder, image_file)
-    output_path = os.path.join(output_folder, f"moving_{image_file}")
-    
-    # Read the current image
-    image = cv2.imread(input_path)
-    if image is None:
-        print(f"Error: Could not open image {input_path}.")
-        continue
 
-    # Compute the absolute difference between the current image and the median background
-    diff = cv2.absdiff(image, median_background)
+blurred_image = cv2.GaussianBlur(image, (3, 3), 0)
 
-    # Convert the difference to grayscale
-    diff_gray = cv2.cvtColor(diff, cv2.COLOR_BGR2GRAY)
+def update_edges(*args):
+    min_thresh = cv2.getTrackbarPos('minThres', 'canny')
+    max_thresh = cv2.getTrackbarPos('maxThres', 'canny')
+    edges = cv2.Canny(blurred_image, min_thresh, max_thresh)
+    cv2.imshow('canny', edges)
 
-    # Threshold the grayscale difference to create a binary mask
-    _, mask = cv2.threshold(diff_gray, 30, 255, cv2.THRESH_BINARY)
+cv2.namedWindow('canny')
 
-    # Find contours of the detected objects
-    contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+cv2.createTrackbar('minThres', 'canny', 0, 255, update_edges)
+cv2.createTrackbar('maxThres', 'canny', 0, 255, update_edges)
 
-    # Draw bounding boxes around detected moving objects
-    for contour in contours:
-        if cv2.contourArea(contour) > 500:  # Minimum contour area to filter noise
-            x, y, w, h = cv2.boundingRect(contour)
-            # Crop the region of interest (moving object) and save it
-            moving_object = image[y:y+h, x:x+w]
-            moving_object_filename = os.path.join(output_folder, f"moving_object_{image_file}")
-            cv2.imwrite(moving_object_filename, moving_object)
-            print(f"Saved moving object: {moving_object_filename}")
-
-print("Moving object detection and saving complete.")
+update_edges()
+cv2.waitKey(0)
+cv2.destroyAllWindows()
